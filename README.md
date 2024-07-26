@@ -3,4 +3,4 @@ Shiny Application Featuring an RSQLite Database allowing users to find, review, 
 
 All data was scraped from the IMDB top 250 movies.
 
-Project by: 
+Project By: Jack Steel, Ajay Krishnamurthy, Ben Rubin, Tyler Cheung
