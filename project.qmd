@@ -1,0 +1,122 @@
+---
+title: "IMDB Movie Recommendation"
+subtitle: "Sta 323 - Final Project"
+format: 
+  html:
+    self-contained: true
+author:
+- Jack Steel
+- Ajay Krishnamurthy
+- Ben Rubin
+- Tyler Cheung
+---
+
+
+## Setup
+
+We have separated our code into different R scripts to be more modular. The database is pushed to GitHub already in data/movies.db, so there should not be anything necessary in that aspect. If there is no database, run db.R to create the database and the tables. To get the IMDB movie data, we have created and added imdb.csv to the data folder as well. To rescrape the data, run the get_imdb.R script. To run the shiny app, run IMDBApp.R. This will start the shiny server and you will be able to use our application. Database functions were written in crud.R, which is sourced at the beginning of IMDBApp.R. 
+
+Our source file for our IMDB ShinyApp is our crud.R file. We reference this file at the top of our IMDBApp.R Shiny implementation. Our database file for scraping is our db.R file, which uses the RSQLite package to store information from data/movies.db.
+
+We included the following packages that need to be installed: 
+library(shiny)
+library(bslib)
+library(tidyverse)  
+library(purrr)   
+library(RSQLite)
+library(shinydashboard)
+library(DT)
+library(slickR)
+library(svglite)
+library(gdtools)
+
+When running the Shiny App, it is recommended to create an account for a full user experience. However, you can still try out the search movies feature without creating an account or logging in. Attempting to add a movie to a watchlist or submit a review without being logged in will cause the user to be prompted with a message that they must log in to use that feature. 
+
+## Introduction
+
+Have you ever opened Netflix, Hulu, or any streaming service and didn't know what to watch? For most people, that answer is a yes. From personal experience, each of us have spent over 30 minutes, on several occasions, trying to find a movie that best fits our interest, only to decide not to watch a movie. This time spent on looking for a movie should be spent on actually watching the film. While these streaming services do provide recommendations based on previous watches, these recommendations never take into account a combination of characteristics movie-watchers look for in a movie at a given time, such as ratings, duration, and genre. Moreover, these streaming services fail to give the user authority in rating and leaving reviews on the film, beyond just a thumbs up and thumbs down. If movie-watchers had an application that provided the intersection of leaving personalized reviews and filtering a database of movies based on various preferences, they'd save tons of time wasted on searching for a film. 
+
+With that being said, our group has decided to leverage skills and knowledge accumulated over the course of the semester in Stat323 to create a Shiny App allowing users to filter, locate, and learn more about movies based on their personalized preferences. In addition, the application serves as a notebook where users can journal and leave reviews on the movies they’ve watched, helping the application find the best movie for the user. Using our knowledge of Shiny, rvest, and databases, we’ve created a tool that will ensure you don’t waste any time trying to identify a movie that best fits your taste. 
+
+## Methods / Implementation
+
+Our project consists of three major sections: the IMDB web scraping, database and crud operations, and the frontend. The intersection of these three areas allowed us to develop an application that collects information from the official IMDB website in an efficient manner, and allows users to interact with movie reviewing, rating, and watch lists using the database and frontend. Shiny was used for the frontend, and serves as a reliable way to have dynamic rendering for the best user experience. We opted to use a SQLite3 database to match what was used on homework 5, and for easy use with RSQLite.  
+
+# IMDB Web Scraping
+
+In order to collect the information necessary for creating the Top 250 movie data frame, we leveraged the rvest package and scraped the IMDB website. We started first by retrieving the URL for the list with the top 250 movies and then the base URL for each of the individual movies in the list. We read this initial page with the  Top 250 movies using read_html() and stored this in our page variable. With this, we got each of the link tags found in the href attribute and stored this list of link tags in a variable, which was then pasted with the base URL and added to a dataframe of the individual movie links. Next, we initialized our final data frame containing columns for the movie name, description, year, star rating, metascore rating, age rating, duration, genre, and image. We populated this dataframe using a while loop iterating through each of the movie links of the link data frame (note that there are other links found at the bottom of the link data frame that do not correspond to movies – these were ignored). For each iteration, or each movie link, we first used read_html() to get the page for the current movie and scraped for the movie title. Next, we scraped the list elements containing the year, age rating, and duration for each movie. The first value in this list represented the year, thereby storing it in the year column for that row of the data frame. If the list elements were of length two, this meant that the movie did not have an age rating (likely a foreign film) and thus the second element in the list was duration and was stored in a duration variable, while storing “Not Rated” in the age rating column. If the list elements were of length three, the second element of the list was age rating and was stored in the age rating column, and duration was stored in a duration variable. The durations had the format “[hour]h [minutes]m” and thus were not in a numerically, usable format. Therefore, we used substrings and casting as integers to calculate the total number of minutes for each movie and stored this in the duration column of the data frame. Next, we retrieved the first photo URL for the movies and stored this in the image column. Similarly, we used html_elements() to retrieve the description, star rating, and metascore rating for each movie in the list, storing those in the respective columns. Lastly, we retrieved the genres for each of the movie, which would be stored in the format “Genre1Genre2Genre3…” if the movie had multiple genres. This was inconvenient, given that we’d want the movie to appear several times in the dataframe for each of its genres (and adjust such that it doesn’t appear twice when filtered for a given genre). Therefore, we used the gsub function to place a comma before each capital letter in the string of genres, and then split the string into a list for each genre that appeared in the string. Another issue we found was that a comma would be placed before the capital letters in “Sci-Fi” (,Sci-,Fi) and “Film-Noir” (,Film-,Noir). To adjust for this, we checked if the current genre (that we are looking at in the list) was “Sci-” or “Film-” and pasted the following genre (which would be “Fi” or “Noir”) with this to get the entire genre name, while incrementing the iterator that is indexing the list of genres. Finally, we converted this data frame to a CSV file to be used by the database R script later on. 
+
+# Database
+
+Our db.R file creates a SQLite database schema for containing and managing our movie data. Our database file starts by importing the RSQLite library and establishing a connection with the database “movies.db” from our data directory. We used the dbConnect() function from the same RSQLite library. We use this connection to create different users, movies, reviews, ratings, and watchlist tables. 
+
+Our "users" table contains:
+-user_id: an INTEGER column serving as the primary key.
+-username: a TEXT column for storing usernames, which must be unique and not null.
+-password: a TEXT column for storing passwords, which must not be null.
+-email: a TEXT column for storing email addresses, which must be unique.
+
+This was the minimum viable table that we designed for this project. We did not utilize the email field, but in the future this would replace the username and would serve both login, and forgot password purposes. 
+
+The “movies” table contains:
+-movie_id: an INTEGER column serving as the primary key.
+-title: a TEXT column for storing movie titles, which must not be null.
+-genre: a TEXT column for storing movie genres.
+-duration: an INTEGER column for storing the duration of the movie.
+-description: a TEXT column for storing movie descriptions.
+-image: a TEXT column for storing paths to movie images.
+-imdb_url: a TEXT column for storing IMDb URLs of the movies.
+
+We add a movie to the database when a user makes a request to add a movie to the watchlist or submit a review. We could have instead just added all the movies found from scraping to the database, but this way we only add what is necessary to store.
+
+The “reviews” table contains:
+-review_id: an INTEGER column serving as the primary key.
+-user_id: an INTEGER column referencing the user_id from the “users” table.
+-movie_id: an INTEGER column referencing the movie_id from the “movies” table.
+-review_text: a TEXT column for storing the review text.
+-review_date: a DATE column with a default value of the current timestamp.
+It also establishes foreign key constraints referencing the user_id and movie_id columns to their respective tables.
+
+Each review must be linked to a user and a movie.
+
+The “ratings” table contains:
+-rating_id: an INTEGER column serving as the primary key.
+-user_id: an INTEGER column referencing the user_id from the “users” table.
+-movie_id: an INTEGER column referencing the movie_id from the “movies” table.
+-rating: an INTEGER column for storing ratings, constrained between 1 and 5.
+It also establishes foreign key constraints referencing the user_id and movie_id columns to their respective tables.
+
+Each rating must be linked to a user and movie as well.
+
+Finally, the “watchlist” table contains:
+-watchlist_id: an INTEGER column serving as the primary key with AUTOINCREMENT property.
+-user_id: an INTEGER column referencing the user_id from the “users” table.
+-movie_id: an INTEGER column referencing the movie_id from the “movies” table.
+-added_date: a DATE column with a default value of the current timestamp.
+It also establishes foreign key constraints referencing the user_id and movie_id columns to their respective tables.
+
+Each watchlist must also be linked to a movie and user.
+
+In conclusion, this db.R file allows us to have a relational database to store all of our information about both users, reviews, and movies, letting us manage movie-related data. We initially tried using CSS selectors, and selectorGadget from IMDB website, but found this process much more effective for retrieving data. 
+
+Within crud.R, we created functions for every create-read-update-delete operation we needed. Using RSQLite, we were able to connect to our sqlite database and do selects, updates, and more. In the future, this would be changed to be truly CRUD and follow HTTP protocol, with our shiny app making GET and POST requests to our backend that would in turn update the database. This would improve several aspects of our app like error handling.
+
+# User Experience
+
+Our shiny app implementation first requests that the user sign up or log in to their account. They receive a modal to input their credentials, which are then checked the database, and the user is redirected to their personal movie portal upon success. We contain a feature for non-member users to still use our movie search interface, but will not have access to wish lists or reviewing features. We use a one-way hash and salt via the sodium package to store our user passwords so that user passwords are not susceptible to attacks. Following their log-in, users will be able to interact with their personal dashboard. We added different bslib cards to separate reviews, user information, a movie watch list and ratings. These different pages give our app the flow of a website as opposed to an individual web-page. 
+
+Under the movie search function, users are faced with a sidebar with different checkboxes where they can select the movie genre, metascore range, rating range, and year. We decided to leave just the Drama box checked, as well as all of the ratings, for user practicality. Sample users during testing tended to prefer one or two options checked, as opposed to all of them. This populates a table of clickable links that redirect to a movie description, cover photo and the ability to add to watchlist or leave a review. Once new reviews are posted or movies are added, they will populate the profile page. We ran into issues with having a live update to the profile page upon a review being inserted into the database. Users may have to refresh the shiny app to see the results of their submitted review in their profile. This was because the rendering associated with the slickR package was being duplicated when trying to update it, so it was removed. In order to ensure our filtering process worked correctly, our observeEvent function within our server side receives the numerical filter inputs and applies them to our data table, outputting the movies as hyperlinked titles so that they can be clicked on pop up (The filter button may take a couple seconds to populate the list of movies). We will also note that occasional selections from the movies from the list of links will cause a movie modal to pop up twice, or cause difficulties in selecting a different movie. Once an individual movie is selected, we use the image source to display the image from IMDB's S3 bucket where it is stored, and sequentially output the description. Users can customize their personal portal for watching, reviewing, and finding new movies, curbing the movie selection indecision.
+
+## Discussion & Conclusion
+
+After developing and testing the Shiny app, we integrated topics from our course curriculum to enhance its functionality. Upon sharing the app with friends, they were thrilled with the concept and tried it out to find highly rated movies to watch after their finals. Given the positive feedback, we think this could be a very useful app for people. This could include additional features to make it even easier for users to discover the perfect movie for a relaxing weekend. For example, once we’ve built a foundational user base to collect data from our user’s preferences in movies out of the Top 250 recommended from IMDB, we can insert a feature that shows what movies are popular amongst the people that have used our Shiny app. From there we can create a more tailored experience for our users and a better experience overall. Additionally, we also plan to explore a social feature for our app, where users could join social circles for a recommended movie for a group. This would combine individual preferences and past ratings of viewed movies to populate a list of options. Lastly, we believe that inserting a movie trailer into the description pop-up could be a useful feature. When deciding on a movie, our users might want to see the previews to confirm that it looks appealing, but as of right now would have to leave our app to do so. Adding this feature would allow users to have all the movie information that they would need.  
+
+We also acknowledge certain limitations in our current application. Presently, our data source is limited to IMDB's Top 250 Movies list, which restricts the diversity of our recommendations. To enhance the scope and relevance of our recommendations, we plan to expand our web scraping capabilities to include a broader array of movies from IMDB, as well as from other websites that feature internationally produced films, small indie projects, and works by independent artists not listed in IMDB's databases. Most optimally, however, would be to use IMDB's developer API, which we took a look at. This would be the most robust option, and we could save the results to disk for our API requests to reduce the cost of using the API.
+
+Additionally, it takes a few minutes to scrape all the data from the top 250 movies. Despite this, based on the coursework, our current methodology remains as efficient as it was in prior assignments to scrape and store data for our app. However, this isn't a very significant drawback, as the top 250 movies only realistically needs to be scraped once. If we added support for the IMDB Developer API, this would not be necessary anymore.
+
+Regarding the technical aspects that could be improved in the future, we could use a more robust, production-level database like PostgreSQL. Instead of doing all database operations in CRUD.py and making our backend stateful, we plan to use R's Plumber package to create a REST API and implement JSON Web Tokens to create a stateless backend. This would improve the capabilities of our app and make it more ready for a production environment. With this, our shiny app frontend could simply make HTTP requests to our backend and it would allow people to use our backend API without ever needing to use the shiny frontend, if they wanted to get movie data from it.
+
+In conclusion, we envision our application as a potential extension for IMDB, especially considering the innovative features we've incorporated into our Shiny app. This could be valuable for IMDB, which has experienced a decline in total visits year over year relative to competitors, based on research found online. By incorporating features such as the social interaction component we previously suggested, IMDB could significantly enhance user engagement, particularly among the 18-24 age demographic—a group currently underrepresented in its user base. By catering to younger audiences while maintaining the functionality that existing users rely on, IMDB could bolster its market share and sustain its relevance amid fierce competition in the industry.
+
+
